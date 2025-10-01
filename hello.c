@@ -1,26 +1,65 @@
-#include <linux/init.h>     // For macros module_init and module_exit
-#include <linux/module.h>   // Core header for loading LKMs into the kernel
-#include <linux/kernel.h>   // Contains types, macros, functions for the kernel
+#include <linux/init.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/miscdevice.h>
+#include <linux/fs.h>
+#include <linux/uaccess.h>   // copy_to_user
 
-// Module information
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Giuseppe Pia");
-MODULE_DESCRIPTION("A simple Hello World kernel module");
-MODULE_VERSION("0.1");
+MODULE_AUTHOR("Your Name");
+MODULE_DESCRIPTION("Hello char device using miscdevice");
+MODULE_VERSION("0.2");
 
-// Function executed when the module is loaded
+static const char hello_msg[] = "Hello from /dev/hello\n";
+
+static ssize_t hello_read(struct file *file, char __user *buf,
+                          size_t count, loff_t *ppos)
+{
+    size_t len = sizeof(hello_msg) - 1;   // exclude trailing '\0'
+
+    // Implement EOF after the message is read once:
+    if (*ppos >= len)
+        return 0;
+
+    if (count > len - *ppos)
+        count = len - *ppos;
+
+    if (copy_to_user(buf, hello_msg + *ppos, count))
+        return -EFAULT;
+
+    *ppos += count;
+    return count;
+}
+
+static const struct file_operations hello_fops = {
+    .owner  = THIS_MODULE,
+    .read   = hello_read,
+    .llseek = no_llseek,
+};
+
+static struct miscdevice hello_miscdev = {
+    .minor = MISC_DYNAMIC_MINOR,
+    .name  = "hello",        // device node will be /dev/hello
+    .fops  = &hello_fops,
+    .mode  = 0666,           // convenience for testing (optional)
+};
+
 static int __init hello_init(void)
 {
-    printk(KERN_INFO "Hello from kernel space!\n");
-    return 0; // 0 = success
+    int ret = misc_register(&hello_miscdev);
+    if (ret) {
+        pr_err("hello: misc_register failed: %d\n", ret);
+        return ret;
+    }
+    pr_notice("hello: /dev/%s registered\n", hello_miscdev.name);
+    return 0;
 }
 
-// Function executed when the module is removed
 static void __exit hello_exit(void)
 {
-    printk(KERN_INFO "Goodbye world\n");
+    misc_deregister(&hello_miscdev);
+    pr_notice("hello: /dev/%s deregistered\n", hello_miscdev.name);
 }
 
-// Register entry and exit points
 module_init(hello_init);
 module_exit(hello_exit);
