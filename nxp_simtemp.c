@@ -12,6 +12,8 @@
 #include <linux/atomic.h>
 #include <linux/slab.h>
 #include "nxp_simtemp.h"
+#include <linux/poll.h>
+
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Gius Pianfort");
@@ -149,9 +151,27 @@ static ssize_t simtemp_read(struct file *file, char __user *buf,
     return sizeof(s);
 }
 
+static __poll_t simtemp_poll(struct file *file, poll_table *wait)
+{
+    struct simtemp_dev *d = gdev;
+    __poll_t mask = 0;
+    unsigned long flags;
+
+    /* register interest in the wait queue: if no data, will sleep here */
+    poll_wait(file, &d->wq, wait);
+
+    spin_lock_irqsave(&d->lock, flags);
+    if (!rb_is_empty(d))
+        mask |= POLLIN | POLLRDNORM;   // new data available for read
+    spin_unlock_irqrestore(&d->lock, flags);
+
+    return mask;
+}
+
 static const struct file_operations simtemp_fops = {
     .owner  = THIS_MODULE,
     .read   = simtemp_read,
+    .poll   = simtemp_poll,
     .llseek = no_llseek,
 };
 
