@@ -13,12 +13,14 @@
 #include <linux/slab.h>
 #include "nxp_simtemp.h"
 #include <linux/poll.h>
+#include <linux/device.h>   /* for sysfs device attributes */
+#include <linux/sysfs.h>    /* for DEVICE_ATTR macros */
 
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Gius Pianfort");
 MODULE_DESCRIPTION("nxp_simtemp: periodic virtual temperature source");
-MODULE_VERSION("0.2");
+MODULE_VERSION("0.3");
 
 /* ---- Config (temporal) ---- */
 #define SIMTEMP_PERIOD_MS   100       /* 10 Hz */
@@ -36,6 +38,14 @@ struct simtemp_dev {
     /* sync & stats */
     wait_queue_head_t wq;  /* readers sleep here when empty */
     atomic64_t total_samples;
+    
+    /* configurable parameters */
+    int period_ms;         /* sampling period in milliseconds */
+    s32 threshold_mC;      /* alert threshold in milli-Celsius */
+    int mode;              /* 0=normal, 1=noisy, 2=ramp */
+    
+    /* threshold crossing detection */
+    bool above_threshold;  /* previous sample was above threshold */
 
     /* producer */
     struct hrtimer timer;
@@ -75,6 +85,108 @@ static inline bool rb_pop(struct simtemp_dev *d, struct simtemp_sample *out)
     return true;
 }
 
+/* ---- Sysfs attribute handlers ---- */
+
+/* sampling_ms: configurable sampling period in milliseconds */
+static ssize_t sampling_ms_show(struct device *dev, 
+                                struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf, "%d\n", gdev->period_ms);
+}
+
+static ssize_t sampling_ms_store(struct device *dev,
+                                 struct device_attribute *attr,
+                                 const char *buf, size_t count)
+{
+    int ms;
+    
+    /* validate input: must be between 1ms and 10 seconds */
+    if (kstrtoint(buf, 10, &ms) || ms < 1 || ms > 10000)
+        return -EINVAL;
+    
+    /* update period and restart timer */
+    gdev->period_ms = ms;
+    gdev->period = ms_to_ktime(ms);
+    
+    /* restart timer with new period */
+    hrtimer_cancel(&gdev->timer);
+    hrtimer_start(&gdev->timer, gdev->period, HRTIMER_MODE_REL_PINNED);
+    
+    return count;
+}
+
+/* threshold_mC: alert threshold in milli-Celsius */
+static ssize_t threshold_mC_show(struct device *dev,
+                                struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf, "%d\n", gdev->threshold_mC);
+}
+
+static ssize_t threshold_mC_store(struct device *dev,
+                                  struct device_attribute *attr,
+                                  const char *buf, size_t count)
+{
+    s32 mC;
+    
+    /* validate input: reasonable temperature range */
+    if (kstrtos32(buf, 10, &mC) || mC < -50000 || mC > 150000)
+        return -EINVAL;
+    
+    gdev->threshold_mC = mC;
+    return count;
+}
+
+/* mode: temperature generation mode */
+static ssize_t mode_show(struct device *dev,
+                         struct device_attribute *attr, char *buf)
+{
+    const char *mode_str[] = {"normal", "noisy", "ramp"};
+    
+    if (gdev->mode >= 0 && gdev->mode < 3)
+        return sprintf(buf, "%s\n", mode_str[gdev->mode]);
+    else
+        return sprintf(buf, "unknown\n");
+}
+
+static ssize_t mode_store(struct device *dev,
+                          struct device_attribute *attr,
+                          const char *buf, size_t count)
+{
+    int mode;
+    
+    /* parse mode string - remove trailing newline if present */
+    size_t len = count;
+    if (len > 0 && buf[len-1] == '\n')
+        len--;  /* remove newline for comparison */
+    
+    /* parse mode string */
+    if (strncmp(buf, "normal", 6) == 0 && len == 6)
+        mode = 0;
+    else if (strncmp(buf, "noisy", 5) == 0 && len == 5)
+        mode = 1;
+    else if (strncmp(buf, "ramp", 4) == 0 && len == 4)
+        mode = 2;
+    else
+        return -EINVAL;
+    
+    gdev->mode = mode;
+    return count;
+}
+
+/* stats: read-only statistics */
+static ssize_t stats_show(struct device *dev,
+                          struct device_attribute *attr, char *buf)
+{
+    return sprintf(buf, "total_samples=%lld\n", 
+                   atomic64_read(&gdev->total_samples));
+}
+
+/* ---- Device attribute declarations ---- */
+static DEVICE_ATTR_RW(sampling_ms);    /* read-write attribute */
+static DEVICE_ATTR_RW(threshold_mC);   /* read-write attribute */
+static DEVICE_ATTR_RW(mode);           /* read-write attribute */
+static DEVICE_ATTR_RO(stats);          /* read-only attribute */
+
 /* ---- Producer work: generates one sample and pushes to ring ---- */
 static void simtemp_work_fn(struct work_struct *work)
 {
@@ -82,14 +194,35 @@ static void simtemp_work_fn(struct work_struct *work)
     struct simtemp_sample s;
     unsigned long flags;
 
-    /* Generate a synthetic sample: simple sawtooth in mC */
-    static s32 ramp = 20000; /* 20.000 °C */
-    ramp += 123;             /* +0.123 °C per sample */
-    if (ramp > 45000) ramp = 20000;
-
+    /* Generate temperature based on configured mode */
     s.timestamp_ns = ktime_get_ns();
-    s.temp_mC      = ramp;
     s.flags        = 1u;     /* bit0 = NEW_SAMPLE */
+    
+    switch (d->mode) {
+    case 0: /* normal mode: constant temperature */
+        s.temp_mC = 25000;  /* 25°C */
+        break;
+        
+    case 1: /* noisy mode: random temperature */
+        s.temp_mC = 25000 + (get_random_u32() % 10000) - 5000;  /* 20-30°C */
+        break;
+        
+    case 2: /* ramp mode: sawtooth pattern */
+        static s32 ramp = 20000; /* 20.000 °C */
+        ramp += 123;             /* +0.123 °C per sample */
+        if (ramp > 45000) ramp = 20000;
+        s.temp_mC = ramp;
+        break;
+        
+    default:
+        s.temp_mC = 25000;  /* fallback to normal */
+        break;
+    }
+    
+    /* check threshold crossing */
+    if (s.temp_mC > d->threshold_mC) {
+        s.flags |= 2u;  /* bit1 = THRESHOLD_CROSSED */
+    }
 
     spin_lock_irqsave(&d->lock, flags);
     rb_push(d, &s);
@@ -194,6 +327,11 @@ static int __init simtemp_init(void)
     spin_lock_init(&gdev->lock);
     init_waitqueue_head(&gdev->wq);
     atomic64_set(&gdev->total_samples, 0);
+    
+    /* initialize configurable parameters */
+    gdev->period_ms = SIMTEMP_PERIOD_MS;
+    gdev->threshold_mC = 45000;  /* 45°C default threshold */
+    gdev->mode = 2;               /* ramp mode by default */
 
     INIT_WORK(&gdev->work, simtemp_work_fn);
 
@@ -204,6 +342,19 @@ static int __init simtemp_init(void)
         return ret;
     }
 
+    /* create sysfs attributes */
+    ret = device_create_file(simtemp_miscdev.this_device, &dev_attr_sampling_ms);
+    if (ret) goto err_sysfs;
+    
+    ret = device_create_file(simtemp_miscdev.this_device, &dev_attr_threshold_mC);
+    if (ret) goto err_sysfs;
+    
+    ret = device_create_file(simtemp_miscdev.this_device, &dev_attr_mode);
+    if (ret) goto err_sysfs;
+    
+    ret = device_create_file(simtemp_miscdev.this_device, &dev_attr_stats);
+    if (ret) goto err_sysfs;
+
     /* timer @ SIMTEMP_PERIOD_MS */
     gdev->period = ktime_set(0, SIMTEMP_PERIOD_MS * 1000000ULL);
     hrtimer_init(&gdev->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_PINNED);
@@ -213,6 +364,12 @@ static int __init simtemp_init(void)
     pr_notice("simtemp: /dev/%s up, period=%d ms, ring=%d\n",
               simtemp_miscdev.name, SIMTEMP_PERIOD_MS, RING_SIZE);
     return 0;
+
+err_sysfs:
+    pr_err("simtemp: failed to create sysfs attributes: %d\n", ret);
+    misc_deregister(&simtemp_miscdev);
+    kfree(gdev);
+    return ret;
 }
 
 static void __exit simtemp_exit(void)
@@ -220,6 +377,12 @@ static void __exit simtemp_exit(void)
     /* stop producer first */
     hrtimer_cancel(&gdev->timer);
     flush_work(&gdev->work);
+
+    /* remove sysfs attributes */
+    device_remove_file(simtemp_miscdev.this_device, &dev_attr_sampling_ms);
+    device_remove_file(simtemp_miscdev.this_device, &dev_attr_threshold_mC);
+    device_remove_file(simtemp_miscdev.this_device, &dev_attr_mode);
+    device_remove_file(simtemp_miscdev.this_device, &dev_attr_stats);
 
     misc_deregister(&simtemp_miscdev);
 
