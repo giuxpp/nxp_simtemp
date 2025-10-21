@@ -20,7 +20,7 @@
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Gius Pianfort");
 MODULE_DESCRIPTION("nxp_simtemp: periodic virtual temperature source");
-MODULE_VERSION("0.3");
+MODULE_VERSION("1.0");
 
 /* ---- Config (temporal) ---- */
 #define SIMTEMP_PERIOD_MS   100       /* 10 Hz */
