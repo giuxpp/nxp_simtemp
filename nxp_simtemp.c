@@ -38,6 +38,7 @@ struct simtemp_dev {
     /* sync & stats */
     wait_queue_head_t wq;  /* readers sleep here when empty */
     atomic64_t total_samples;
+    atomic64_t threshold_crossings;
     
     /* configurable parameters */
     int period_ms;         /* sampling period in milliseconds */
@@ -177,8 +178,9 @@ static ssize_t mode_store(struct device *dev,
 static ssize_t stats_show(struct device *dev,
                           struct device_attribute *attr, char *buf)
 {
-    return sprintf(buf, "total_samples=%lld\n", 
-                   atomic64_read(&gdev->total_samples));
+    return sprintf(buf, "total_samples=%lld\nthreshold_crossings=%lld\n", 
+                   atomic64_read(&gdev->total_samples),
+                   atomic64_read(&gdev->threshold_crossings));
 }
 
 /* ---- Device attribute declarations ---- */
@@ -219,9 +221,18 @@ static void simtemp_work_fn(struct work_struct *work)
         break;
     }
     
-    /* check threshold crossing */
-    if (s.temp_mC > d->threshold_mC) {
+    /* detect threshold crossing (not just being above threshold) */
+    bool currently_above = (s.temp_mC > d->threshold_mC);
+    
+    if (currently_above != d->above_threshold) {
+        /* threshold crossed - set flag and update state */
         s.flags |= 2u;  /* bit1 = THRESHOLD_CROSSED */
+        d->above_threshold = currently_above;
+        atomic64_inc(&d->threshold_crossings);
+        
+        pr_info("simtemp: threshold crossed %s (temp=%d mC, threshold=%d mC)\n",
+                currently_above ? "UP" : "DOWN", 
+                s.temp_mC, d->threshold_mC);
     }
 
     spin_lock_irqsave(&d->lock, flags);
@@ -327,11 +338,13 @@ static int __init simtemp_init(void)
     spin_lock_init(&gdev->lock);
     init_waitqueue_head(&gdev->wq);
     atomic64_set(&gdev->total_samples, 0);
+    atomic64_set(&gdev->threshold_crossings, 0);
     
     /* initialize configurable parameters */
     gdev->period_ms = SIMTEMP_PERIOD_MS;
     gdev->threshold_mC = 45000;  /* 45°C default threshold */
     gdev->mode = 2;               /* ramp mode by default */
+    gdev->above_threshold = false; /* start below threshold */
 
     INIT_WORK(&gdev->work, simtemp_work_fn);
 
