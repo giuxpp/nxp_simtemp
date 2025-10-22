@@ -150,29 +150,27 @@ static ssize_t mode_show(struct device *dev,
 }
 
 static ssize_t mode_store(struct device *dev,
-                          struct device_attribute *attr,
-                          const char *buf, size_t count)
+    struct device_attribute *attr,
+    const char *buf, size_t count)
 {
     int mode;
-    
-    /* parse mode string - remove trailing newline if present */
     size_t len = count;
-    if (len > 0 && buf[len-1] == '\n')
-        len--;  /* remove newline for comparison */
-    
-    /* parse mode string */
-    if (strncmp(buf, "normal", 6) == 0 && len == 6)
+
+    if (len && buf[len-1] == '\n') len--;
+
+    if ((len == 6 && !strncmp(buf, "normal", 6)) || (len == 1 && buf[0] == '0'))
         mode = 0;
-    else if (strncmp(buf, "noisy", 5) == 0 && len == 5)
+    else if ((len == 5 && !strncmp(buf, "noisy", 5)) || (len == 1 && buf[0] == '1'))
         mode = 1;
-    else if (strncmp(buf, "ramp", 4) == 0 && len == 4)
+    else if ((len == 4 && !strncmp(buf, "ramp", 4)) || (len == 1 && buf[0] == '2'))
         mode = 2;
     else
         return -EINVAL;
-    
+
     gdev->mode = mode;
     return count;
 }
+
 
 /* stats: read-only statistics */
 static ssize_t stats_show(struct device *dev,
