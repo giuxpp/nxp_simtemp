@@ -18,8 +18,8 @@
 
 namespace {
 
-constexpr const char* kDevPath = "/dev/simtemp";
-constexpr const char* kSysfsBase = "/sys/class/misc/simtemp";
+constexpr const char* kDevPath = "/dev/simtemp";          // character device exposed by the driver
+constexpr const char* kSysfsBase = "/sys/class/misc/simtemp"; // sysfs directory for configuration/stats
 
 #pragma pack(push, 1)
 struct SimtempSample {
@@ -58,6 +58,7 @@ std::string ReadFile(const std::string& path) {
 
 int WriteAttr(const std::string& attr, const std::string& value) {
     const std::string path = SysfsPath(attr);
+    // Attributes are small text files: open/write/close is sufficient.
     int fd = ::open(path.c_str(), O_WRONLY | O_CLOEXEC);
     if (fd < 0) {
         return -errno;
@@ -107,6 +108,7 @@ SimtempStats ReadStats() {
 }
 
 bool WaitForSample(int fd, SimtempSample* out, int timeout_ms) {
+    // Block until poll() says data is ready, respecting the provided timeout.
     struct pollfd pfd {
         fd, POLLIN | POLLRDNORM, 0
     };
@@ -131,6 +133,7 @@ bool WaitForSample(int fd, SimtempSample* out, int timeout_ms) {
 class SimtempTest : public ::testing::Test {
 protected:
     void SetUp() override {
+        // Bail out early if the module is not loaded or sysfs tree missing.
         if (!PathExists(kDevPath)) {
             GTEST_SKIP() << "/dev/simtemp not present; load module before running tests";
         }
@@ -138,16 +141,19 @@ protected:
             GTEST_SKIP() << "sysfs path missing; load module before running tests";
         }
 
+        // Snapshot current settings so we can restore them in TearDown().
         original_sampling_ = ReadAttrInt("sampling_ms");
         original_threshold_ = ReadAttrInt("threshold_mC");
         original_mode_ = ReadAttr("mode");
         original_stats_ = ReadStats();
 
+        // Keep the device file open for the duration of each test.
         dev_fd_ = ::open(kDevPath, O_RDONLY | O_CLOEXEC);
         if (dev_fd_ < 0) {
             GTEST_SKIP() << "Cannot open /dev/simtemp for reading (" << strerror(errno) << ")";
         }
 
+        // Ensure we can write sysfs attributes (often requires sudo).
         int check = ::open(SysfsPath("sampling_ms").c_str(), O_WRONLY | O_CLOEXEC);
         if (check < 0) {
             GTEST_SKIP() << "Need write access to sysfs attributes (sudo?)";
@@ -156,6 +162,7 @@ protected:
     }
 
     void TearDown() override {
+        // Restore original configuration to avoid leaking state across runs.
         if (dev_fd_ >= 0) {
             WriteAttr("sampling_ms", std::to_string(original_sampling_));
             WriteAttr("threshold_mC", std::to_string(original_threshold_));
@@ -171,6 +178,7 @@ protected:
             return;
         fcntl(dev_fd_, F_SETFL, flags | O_NONBLOCK);
         SimtempSample dummy{};
+        // Drain any pending samples so subsequent reads observe post-config data.
         while (true) {
             ssize_t n = ::read(dev_fd_, &dummy, sizeof(dummy));
             if (n != sizeof(dummy))
@@ -187,6 +195,7 @@ protected:
 };
 
 TEST_F(SimtempTest, SysfsAttributeRoundTrip) {
+    // Valid writes round-trip successfully.
     ASSERT_EQ(0, WriteAttr("sampling_ms", "250"));
     EXPECT_EQ(250, ReadAttrInt("sampling_ms"));
 
@@ -196,6 +205,7 @@ TEST_F(SimtempTest, SysfsAttributeRoundTrip) {
     ASSERT_EQ(0, WriteAttr("mode", "ramp"));
     EXPECT_EQ("ramp", ReadAttr("mode"));
 
+    // Out-of-range values should be rejected and leave previous values intact.
     EXPECT_EQ(-EINVAL, WriteAttr("sampling_ms", "0"));
     EXPECT_EQ(250, ReadAttrInt("sampling_ms"));
 
@@ -207,6 +217,7 @@ TEST_F(SimtempTest, SysfsAttributeRoundTrip) {
 }
 
 TEST_F(SimtempTest, SamplesContainExpectedFlagsAndRange) {
+    // Ramp mode should periodically generate threshold crossing events.
     ASSERT_EQ(0, WriteAttr("mode", "ramp"));
     ASSERT_EQ(0, WriteAttr("sampling_ms", "5"));
     const int threshold = 30000;
@@ -231,6 +242,7 @@ TEST_F(SimtempTest, SamplesContainExpectedFlagsAndRange) {
         if (s.flags & 0x2u) {
             crossing_seen = true;
             if (has_previous) {
+                // Ensure the flag corresponds to a sign change across the threshold.
                 const long long prev_delta = static_cast<long long>(previous.temp_mC) - threshold;
                 const long long curr_delta = static_cast<long long>(s.temp_mC) - threshold;
                 EXPECT_LE(prev_delta * curr_delta, 0)
@@ -246,6 +258,7 @@ TEST_F(SimtempTest, SamplesContainExpectedFlagsAndRange) {
 }
 
 TEST_F(SimtempTest, PartialReadIsRejected) {
+    // Requesting fewer bytes than a whole sample should return -EINVAL.
     int fd = ::open(kDevPath, O_RDONLY | O_CLOEXEC);
     ASSERT_GE(fd, 0) << "Failed to open device";
 
@@ -260,6 +273,7 @@ TEST_F(SimtempTest, PartialReadIsRejected) {
 }
 
 TEST_F(SimtempTest, PollSignalsDataAvailable) {
+    // poll() must report readable data once a sample arrives.
     ASSERT_EQ(0, WriteAttr("sampling_ms", "20"));
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
@@ -284,6 +298,7 @@ TEST_F(SimtempTest, StressReconfigureAndRead) {
     int reads = 0;
 
     for (int i = 0; i < 15; ++i) {
+        // Rapidly cycle through valid configurations.
         ASSERT_EQ(0, WriteAttr("sampling_ms", std::to_string(sampling_values[i % sampling_values.size()])));
         ASSERT_EQ(0, WriteAttr("mode", modes[i % modes.size()]));
         ASSERT_EQ(0, WriteAttr("threshold_mC", std::to_string(thresholds[i % thresholds.size()])));
@@ -297,6 +312,7 @@ TEST_F(SimtempTest, StressReconfigureAndRead) {
     }
 
     SimtempStats after = ReadStats();
+    // Counters should move forward, even if not by an exact amount.
     EXPECT_GE(after.total_samples, before.total_samples);
     EXPECT_GE(after.threshold_crossings, before.threshold_crossings);
     EXPECT_GE(after.total_samples - before.total_samples, 1);
