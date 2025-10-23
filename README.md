@@ -28,6 +28,8 @@ The project implements a complete “**Virtual Sensor + Alert Path**” flow:
   - Qt-based charting dashboard for live visualization.
   - Allows adjusting sampling period, threshold, and mode from sysfs.
   - Provides alert acknowledgment, stats pop-up, and simulation start/stop controls.
+- **Unit tests (`tests/`)**
+  - GoogleTest-based harness that exercises sysfs writes, device reads, poll semantics, and stress reconfiguration.
 
 - **Automation scripts (`scripts/`)**
   - `build.sh` – builds the kernel module.
@@ -49,6 +51,9 @@ nxp_simtemp/
 │   └── main.cpp          # GUI source
 ├── cli/
 │   └── simtemp_cli.py    # Python CLI
+├── tests/
+│   ├── CMakeLists.txt    # GoogleTest build (FetchContent)
+│   └── simtemp_gtest.cpp # C++ test cases
 ├── scripts/
 │   ├── build.sh
 │   └── run_demo.sh
@@ -72,6 +77,10 @@ nxp_simtemp/
 - CMake 3.16+ and Qt 5.15+/6.x development packages (for GUI, optional):
   ```bash
   sudo apt install qtbase5-dev qtcharts5-dev cmake
+  ```
+- GCC/G++ toolchain and CMake (for unit tests):
+  ```bash
+  sudo apt install build-essential cmake
   ```
 
 ### Build
@@ -154,7 +163,24 @@ sudo gui/build/simtemp_gui
 
 ---
 
-## 6. GUI Live Monitor
+## 6. Unit Tests (GoogleTest)
+
+- Located under `tests/` and built with CMake; Googletest is fetched automatically via `FetchContent`.
+- Tests exercise sysfs round-trips, sample flags/ranges, poll semantics, partial-read error handling, and reconfiguration stress.
+- Because tests write to `/sys/class/misc/simtemp/*`, run them as root or adjust permissions.
+
+### Build & Run
+```bash
+cmake -S tests -B tests/build
+cmake --build tests/build
+sudo ./tests/build/simtemp_tests
+```
+- To avoid `sudo`, create a udev rule granting write access to the sysfs attributes for your user before running.
+- Output reports pass/fail per test; investigate kernel `dmesg` if assertions fail.
+
+---
+
+## 7. GUI Live Monitor
 
 - Plots live temperatures using Qt Charts with automatic axis scaling.
 - Alert indicator latches red on threshold crossings until “Reset Alert” is pressed.
@@ -164,14 +190,14 @@ sudo gui/build/simtemp_gui
 
 ---
 
-## 7. Unload Module
+## 8. Unload Module
 ```bash
 sudo rmmod nxp_simtemp
 ```
 
 ---
 
-## 8. Notes
+## 9. Notes
 
 - `poll()` wakes on:
   - `POLLIN | POLLRDNORM` → new data available.
@@ -181,16 +207,16 @@ sudo rmmod nxp_simtemp
 
 ---
 
-## 9. Next Steps (Optional Enhancements)
+## 10. Next Steps (Optional Enhancements)
 
 - Add data export (CSV or JSON) from GUI/CLI.
-- Implement unit tests for CLI parsing and event timing.
+- Expand automated tests: CLI parsing, GUI smoke tests, integration with simulated sysfs permissions.
 - Add support for `ioctl()` batch configuration.
 - Provide QEMU overlay and DTS for full virtual platform test.
 
 ---
 
-## 10. License
+## 11. License
 
 © 2025 José Giuseppe Pia Figueroa  
 This project is provided for educational and technical demonstration purposes.

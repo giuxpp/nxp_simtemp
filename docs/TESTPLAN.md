@@ -11,6 +11,7 @@
 - OS: Ubuntu 22.04+ (or equivalent)
 - Kernel headers installed: `linux-headers-$(uname -r)`
 - Python 3.8+
+- GCC/G++ and CMake (for unit tests)
 - Repo layout: `kernel/`, `cli/`, `scripts/`
 
 ### Pre-check
@@ -154,6 +155,18 @@ cat /sys/class/misc/simtemp/stats
 
 ---
 
+### T10 — GoogleTest Unit Suite
+**Goal:** Automated regression coverage for sysfs, device reads, poll semantics, and stress scenarios.  
+**Steps:**
+```bash
+cmake -S tests -B tests/build
+cmake --build tests/build
+sudo ./tests/build/simtemp_tests
+```
+**Pass:** All tests report PASSED; investigate failures with `dmesg` and rerun after fixes. To avoid `sudo`, adjust udev permissions for `/sys/class/misc/simtemp/*`.
+
+---
+
 ## 4. Automation
 
 Run the integrated demo (compiles, configures, test-mode, unload):
@@ -185,5 +198,6 @@ sudo -E python3 cli/simtemp_cli.py | tee /tmp/simtemp_cli.txt
 
 ## 7. Exit Criteria
 
-- All T1–T8 pass on at least one matrix row (M3 or M4 recommended).
+- All T1–T10 pass on at least one matrix row (M3 or M4 recommended).
 - `run_demo.sh` exits `0` on two consecutive runs.
+- T10 `simtemp_tests` returns exit code `0` (after any necessary permission adjustments).
