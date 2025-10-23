@@ -163,6 +163,7 @@ cmake -S tests -B tests/build
 cmake --build tests/build
 sudo ./tests/build/simtemp_tests
 ```
+Alternative: `sudo ./scripts/run_unit_tests.sh` (rebuilds kernel module, reloads it, builds tests, runs suite).
 **Pass:** All tests report PASSED; investigate failures with `dmesg` and rerun after fixes. To avoid `sudo`, adjust udev permissions for `/sys/class/misc/simtemp/*`.
 
 ---

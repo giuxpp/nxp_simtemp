@@ -175,6 +175,11 @@ cmake -S tests -B tests/build
 cmake --build tests/build
 sudo ./tests/build/simtemp_tests
 ```
+- Shortcut:
+  ```bash
+  sudo ./scripts/run_unit_tests.sh
+  ```
+  The helper script rebuilds the kernel module, reloads it, builds the GoogleTest harness, and executes the suite end-to-end.
 - To avoid `sudo`, create a udev rule granting write access to the sysfs attributes for your user before running.
 - Output reports pass/fail per test; investigate kernel `dmesg` if assertions fail.
 

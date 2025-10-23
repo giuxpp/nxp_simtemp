@@ -37,6 +37,7 @@
 - Kernel module compiled cleanly (`make -C /lib/modules/.../build modules`) and passed `run_demo.sh` end‑to‑end test.  
 - GUI compiled via `cmake -S gui -B gui/build && cmake --build gui/build` (Qt 5.15) and validated for sysfs read/write, alert reset, stats, and simulation toggle.
 - GoogleTest suite built with `cmake -S tests -B tests/build && cmake --build tests/build` and executed as root to cover sysfs writes, alert flags, poll semantics, and stress scenarios.
+- Added `scripts/run_unit_tests.sh` to automate kernel rebuild, module reload, GoogleTest build, and execution.
 - Verified all sysfs attributes and polling behavior manually.  
 - AI‑generated code never committed blindly — all logic was checked for race conditions, API correctness, and coding style.  
 - Cursor’s inline completions were used for **productivity only**, not for decision‑making.
