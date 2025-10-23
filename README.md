@@ -209,6 +209,9 @@ sudo rmmod nxp_simtemp
   - `POLLPRI` → threshold crossed.
 - The module version remains `1.0`; repository tag `v1.1` reflects addition of CLI and scripts.
 - All sysfs writes require **root privileges** (`sudo`).
+- Demo validated on:
+  - Ubuntu 22.04 / Linux 6.8.0-64 (x86_64 workstation)
+  - Raspberry Pi 5 — Debian aarch64 (`Linux 6.6.51+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.6.51-1+rpt3 (2024-10-08)`)
 
 ---
 

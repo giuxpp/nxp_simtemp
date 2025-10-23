@@ -12,6 +12,7 @@
 - Kernel headers installed: `linux-headers-$(uname -r)`
 - Python 3.8+
 - GCC/G++ and CMake (for unit tests)
+- Raspberry Pi 5 (Debian Bookworm aarch64) validated with kernel: `Linux 6.6.51+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.6.51-1+rpt3 (2024-10-08)`
 - Repo layout: `kernel/`, `cli/`, `scripts/`
 
 ### Pre-check
