@@ -24,6 +24,10 @@ The project implements a complete “**Virtual Sensor + Alert Path**” flow:
   - Reads live samples from `/dev/simtemp`.
   - Configures sysfs parameters.
   - Includes a `--test` mode to verify threshold alerts.
+- **Desktop GUI (`gui/`)**
+  - Qt-based charting dashboard for live visualization.
+  - Allows adjusting sampling period, threshold, and mode from sysfs.
+  - Provides alert acknowledgment, stats pop-up, and simulation start/stop controls.
 
 - **Automation scripts (`scripts/`)**
   - `build.sh` – builds the kernel module.
@@ -40,6 +44,9 @@ nxp_simtemp/
 │   ├── nxp_simtemp.h
 │   ├── Makefile
 │   └── ...
+├── gui/
+│   ├── CMakeLists.txt    # Qt desktop build
+│   └── main.cpp          # GUI source
 ├── cli/
 │   └── simtemp_cli.py    # Python CLI
 ├── scripts/
@@ -62,6 +69,10 @@ nxp_simtemp/
   sudo apt install linux-headers-$(uname -r)
   ```
 - Python 3.8+ (for CLI).
+- CMake 3.16+ and Qt 5.15+/6.x development packages (for GUI, optional):
+  ```bash
+  sudo apt install qtbase5-dev qtcharts5-dev cmake
+  ```
 
 ### Build
 From the project root:
@@ -72,6 +83,14 @@ The compiled module appears at:
 ```
 kernel/nxp_simtemp.ko
 ```
+
+### GUI Build (optional)
+To build the Qt dashboard:
+```bash
+cmake -S gui -B gui/build
+cmake --build gui/build
+```
+The executable will be at `gui/build/simtemp_gui`.
 
 ---
 
@@ -126,16 +145,33 @@ Output:
 ...
 ```
 
+### Launch GUI Monitor
+```bash
+sudo gui/build/simtemp_gui
+```
+- Requires the module to be loaded and readable sysfs entries under `/sys/class/misc/simtemp`.
+- Root privileges may be necessary for updating sysfs attributes; alternatively adjust permissions via `udev`.
+
 ---
 
-## 6. Unload Module
+## 6. GUI Live Monitor
+
+- Plots live temperatures using Qt Charts with automatic axis scaling.
+- Alert indicator latches red on threshold crossings until “Reset Alert” is pressed.
+- Configures `sampling_ms`, `threshold_mC`, and `mode` directly through sysfs.
+- “Print Stats” fetches kernel counters (`total_samples`, `threshold_crossings`).
+- “Stop/Start Simulation” toggles data reads from `/dev/simtemp` without unloading the module.
+
+---
+
+## 7. Unload Module
 ```bash
 sudo rmmod nxp_simtemp
 ```
 
 ---
 
-## 7. Notes
+## 8. Notes
 
 - `poll()` wakes on:
   - `POLLIN | POLLRDNORM` → new data available.
@@ -145,16 +181,16 @@ sudo rmmod nxp_simtemp
 
 ---
 
-## 8. Next Steps (Optional Enhancements)
+## 9. Next Steps (Optional Enhancements)
 
-- Add GUI visualization (e.g., PyQt or Tkinter gauge).
+- Add data export (CSV or JSON) from GUI/CLI.
 - Implement unit tests for CLI parsing and event timing.
 - Add support for `ioctl()` batch configuration.
 - Provide QEMU overlay and DTS for full virtual platform test.
 
 ---
 
-## 9. License
+## 10. License
 
 © 2025 José Giuseppe Pia Figueroa  
 This project is provided for educational and technical demonstration purposes.
