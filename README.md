@@ -74,7 +74,7 @@ nxp_simtemp/
   sudo apt install linux-headers-$(uname -r)
   ```
 - Python 3.8+ (for CLI).
-- CMake 3.16+ and Qt 5.15+/6.x development packages (for GUI, optional):
+- CMake 3.16+ and Qt 5.15+/6.x development packages (for GUI):
   ```bash
   sudo apt install qtbase5-dev qtcharts5-dev cmake
   ```
@@ -88,13 +88,12 @@ From the project root:
 ```bash
 ./scripts/build.sh
 ```
-The compiled module appears at:
-```
-kernel/nxp_simtemp.ko
-```
+The script compiles the kernel module and (when Qt/CMake are present) the GUI dashboard, producing:
+- `kernel/nxp_simtemp.ko`
+- `gui/build/simtemp_gui` *(or `gui/build/Release/simtemp_gui` with multi-config generators)*
 
-### GUI Build (optional)
-To build the Qt dashboard:
+### GUI Build (manual)
+If you need to reconfigure or build the GUI separately:
 ```bash
 cmake -S gui -B gui/build
 cmake --build gui/build

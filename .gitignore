@@ -2,4 +2,10 @@
 *.cmd
 *.mod
 *.ko
-
+*.order
+*.symvers
+*.mod.mc
+*.json
+build/
+gui/build/
+tests/build/

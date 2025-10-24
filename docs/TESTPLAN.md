@@ -17,7 +17,7 @@
 
 ### Pre-check
 ```bash
-./scripts/build.sh
+./scripts/build.sh  # builds kernel module + Qt GUI (if Qt is installed)
 sudo rmmod nxp_simtemp 2>/dev/null || true
 sudo insmod kernel/nxp_simtemp.ko
 ls -l /dev/simtemp
