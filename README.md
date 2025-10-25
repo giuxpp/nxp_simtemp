@@ -214,12 +214,21 @@ sudo rmmod nxp_simtemp
 
 ---
 
-## 10. Next Steps (Optional Enhancements)
+## 10. Submission Links
 
-- Add data export (CSV or JSON) from GUI/CLI.
-- Expand automated tests: CLI parsing, GUI smoke tests, integration with simulated sysfs permissions.
-- Add support for `ioctl()` batch configuration.
-- Provide QEMU overlay and DTS for full virtual platform test.
+Repository (public):  
+https://github.com/giuxpp/nxp_simtemp
+
+Demo video:  
+https://drive.google.com/file/d/1gJbYpaEvEmDNeGy6n2VBkwRa7-o9a3s4/view?usp=drive_link
+
+## 11. Next steps with more time
+
+- Add IOCTLs for atomic configuration updates.
+- Stress-test the sampling and event logic at higher rates.
+- Port to ARM under Yocto with Device Tree bindings.
+- Add more unit tests for CLI parsing and concurrent access.
+- Extend the GUI with real-time sysfs parameter editing.
 
 ---
 
